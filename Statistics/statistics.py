@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 # coding: utf8
-
 import json
 import re
 
@@ -14,6 +13,17 @@ column = 'column'
 items_number = 'items_number'
 total_duration = 'total_duration'
 oldest = 'oldest'
+
+
+def get_user_projects(api: str):
+    url = f"{api}/projects"
+    raw_projects = requests.get(url).json()
+    return [
+        {
+            'label': project['label'],
+            'uri': project['uri']
+        } for project in raw_projects
+    ]
 
 
 def get_tuleap_artifacts(api: str, tracker_id: str) -> list:
@@ -138,13 +148,43 @@ def get_columns_stats(artifacts):
     return stats
 
 
+def choose_project(projects: []):
+    print("Les projets disponibles sont : ")
+
+    for i, project in enumerate(projects, start=1):
+        print(f" - {i} : {project['label']} ({project['uri']})")
+
+    while True:
+        number_choosen = input(
+            f"Entrez un nombre entre 1 et {len(projects)} : ")
+        if re.match('^\d*$', number_choosen):
+            if 1 <= int(number_choosen) <= len(projects):
+                selected_project = projects[int(number_choosen) - 1]
+                print("Vous avez sélectionnez le projet " +
+                      selected_project['label'])
+                return selected_project['uri']
+
+        print("La saisie est incorrecte")
+
+
 if __name__ == '__main__':
     api_url = "https://tuleap.net/api"
 
+    projects = get_user_projects(api_url)
+    project_uri = choose_project(projects)
     trackers = get_project_trackers(api_url, 101)
+    print("Les trackers suivants sont disponibles :")
+    for tracker in trackers:
+        print(tracker)
+
     stats = pd.DataFrame()
 
-    writer = pd.ExcelWriter('stats.xlsx', engine='xlsxwriter')
+    file_input = input("Choisissez un nom de fichier : ").split('.')[0]
+    file_name = file_input + '.xlsx'
+    print("Les stats seront enregistrées ici : " + file_name)
+    print("Analyse en cours...")
+
+    writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
 
     for tracker_name in trackers:
         df1 = get_columns_stats(
@@ -157,8 +197,8 @@ if __name__ == '__main__':
         df1.to_excel(writer, sheet_name=tracker_name)
         writer.sheets[tracker_name].set_column('A:E', 18)
 
-    writer.save()
+    print("Les résultats sont disponibles")
 
-    results = pd.Panel()
+    writer.save()
 
     pd.Panel()
