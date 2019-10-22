@@ -117,7 +117,7 @@ def get_project_trackers(api: str, project_uri: str) -> list:
     """
     url = f"{api}/{project_uri}/trackers"
 
-    results = requests.get(url).json()
+    results = requests.get(url, params=API_PARAMS, verify=False).json()
     return [
         {
             'id': result['id'],
