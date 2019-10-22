@@ -88,7 +88,7 @@ def get_human_duration(time: int) -> str:
     return human_time
 
 
-def get_project_trackers(api: str, project_id: int) -> list:
+def get_project_trackers(api: str, project_uri: str) -> list:
     """
     Returns a list containing the id and labels of all trackers
     associated to a given project\n
@@ -96,11 +96,14 @@ def get_project_trackers(api: str, project_id: int) -> list:
     :param project_id: (int) id of the project to analyze\n
     :return: (list) list of tracker info
     """
-    url = f"{api}/projects/{project_id}/trackers"
+    url = f"{api}/{project_uri}/trackers"
 
+    results = requests.get(url).json()
     return [
-        f"{result['id']} {result['label']}"
-        for result in requests.get(url).json()
+        {
+            'id': result['id'],
+            'label': result['label']
+        } for result in results
     ]
 
 
@@ -135,7 +138,6 @@ def get_columns_stats(artifacts):
             stats.loc[column_name, total_duration] += duration
             stats.loc[column_name, oldest] = \
                 min(submitted_date, stats.loc[column_name, oldest])
-
     # calculates the mean duration time for each column
     stats[total_duration] = stats.apply(
         lambda df: df[total_duration] / df[items_number], axis=1
@@ -165,6 +167,29 @@ def choose_project(projects: []):
                 return selected_project['uri']
 
         print("La saisie est incorrecte")
+        
+def choose_tracker(api_url, project_uri):
+    trackers = get_project_trackers(api_url, project_uri)
+    print("Les trackers suivants sont disponibles :")
+    i = 0
+    for tracker in trackers:
+        i += 1
+        print(str(i) + " : " + tracker["label"])
+
+    while True:
+        number_choosen = input(
+            f"Entrez un nombre entre 1 et {len(trackers)} : ")
+        if re.match('^\d*$', number_choosen):
+            if 1 <= int(number_choosen) <= len(trackers):
+                selected_tracker = trackers[int(number_choosen) - 1]
+                print("Vous avez sélectionnez le tracker " +
+                      selected_tracker["label"])
+                if get_tuleap_artifacts(api_url,selected_tracker["id"]) == []:
+                    print("Le json du tracker est vide sélectionner un autre")
+                else : 
+                    return selected_tracker
+            
+        print("La saisie est incorrecte")
 
 
 if __name__ == '__main__':
@@ -172,10 +197,7 @@ if __name__ == '__main__':
 
     projects = get_user_projects(api_url)
     project_uri = choose_project(projects)
-    trackers = get_project_trackers(api_url, 101)
-    print("Les trackers suivants sont disponibles :")
-    for tracker in trackers:
-        print(tracker)
+    tracker = choose_tracker(api_url,project_uri)
 
     stats = pd.DataFrame()
 
@@ -186,16 +208,14 @@ if __name__ == '__main__':
 
     writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
 
-    for tracker_name in trackers:
-        df1 = get_columns_stats(
-            get_tuleap_artifacts(api_url,
-                                 re.sub('\D*', '', tracker_name))
-        )
-        df1[oldest] = df1[oldest].map(
-            lambda t: datetime.replace(t, tzinfo=None)
-        )
-        df1.to_excel(writer, sheet_name=tracker_name)
-        writer.sheets[tracker_name].set_column('A:E', 18)
+    df1 = get_columns_stats(
+        get_tuleap_artifacts(api_url,tracker["id"])
+    )
+    df1[oldest] = df1[oldest].map(
+        lambda t: datetime.replace(t, tzinfo=None)
+    )
+    df1.to_excel(writer, sheet_name=tracker["label"])
+    writer.sheets[tracker["label"]].set_column('A:E', 18)
 
     print("Les résultats sont disponibles")
 
