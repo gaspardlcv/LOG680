@@ -10,16 +10,17 @@ import configparser
 import pandas as pd
 from datetime import datetime, timezone
 
-tracker = 'tracker'
-column = 'column'
-items_number = 'items_number'
-total_duration = 'total_duration'
-oldest = 'oldest'
+TRACKER = 'tracker'
+COLUMN = 'column'
+ITEMS_NUMBER = 'items_number'
+TOTAL_DURATION = 'total_duration'
+OLDEST_DURATION = 'oldest_duration'
+OLDEST_NAME = 'oldest_name'
 
 # import configuration from '.ini' file
 config = configparser.ConfigParser()
 config.read('.ini')
-api_url = config['TULEAP_API']['api_url']
+API_URL = config['TULEAP_API']['api_url']
 ACCESS_KEY = config['TULEAP_API']['access_key']
 API_PARAMS = {
     'X-Auth-AccessKey': ACCESS_KEY
@@ -133,12 +134,19 @@ def get_columns_stats(artifacts):
 
     # dataframe that will contain results
     stats = pd.DataFrame(
-        columns=[column, items_number, total_duration, oldest]
-    ).set_index(column)
+        columns=[
+            COLUMN,
+            ITEMS_NUMBER,
+            TOTAL_DURATION,
+            OLDEST_DURATION,
+            OLDEST_NAME
+        ]
+    ).set_index(COLUMN)
 
     for artifact in artifacts:
         # we get the column and the submitted date of the artifact
         column_name = artifact['status']
+        label = artifact['title']
         submitted_date_str = artifact['submitted_on'][:-3] + "00"
 
         if column_name == "":
@@ -151,19 +159,24 @@ def get_columns_stats(artifacts):
         duration = (current_date - submitted_date).total_seconds()
 
         if column_name not in stats.index:
-            stats.loc[column_name] = [1, duration, submitted_date]
+            stats.loc[column_name] = [
+                1, duration, submitted_date, label
+            ]
         else:
-            stats.loc[column_name, items_number] += 1
-            stats.loc[column_name, total_duration] += duration
-            stats.loc[column_name, oldest] = \
-                min(submitted_date, stats.loc[column_name, oldest])
+            stats.loc[column_name, ITEMS_NUMBER] += 1
+            stats.loc[column_name, TOTAL_DURATION] += duration
+
+            if submitted_date < stats.loc[column_name, OLDEST_DURATION]:
+                stats.loc[column_name, OLDEST_DURATION] = submitted_date
+                stats.loc[column_name, OLDEST_NAME] = label
+
     # calculates the mean duration time for each column
-    stats[total_duration] = stats.apply(
-        lambda df: df[total_duration] / df[items_number], axis=1
+    stats[TOTAL_DURATION] = stats.apply(
+        lambda df: df[TOTAL_DURATION] / df[ITEMS_NUMBER], axis=1
     )
 
     # duration time is converted in a more readable format
-    stats[total_duration] = stats[total_duration].map(
+    stats[TOTAL_DURATION] = stats[TOTAL_DURATION].map(
         get_human_duration)
 
     return stats
@@ -187,6 +200,7 @@ def choose_project(projects: []):
 
         print("La saisie est incorrecte")
 
+
 def choose_tracker(api_url, project_uri):
     trackers = get_project_trackers(api_url, project_uri)
     print("Les trackers suivants sont disponibles :")
@@ -203,18 +217,20 @@ def choose_tracker(api_url, project_uri):
                 selected_tracker = trackers[int(number_choosen) - 1]
                 print("Vous avez sélectionnez le tracker " +
                       selected_tracker["label"])
-                if get_tuleap_artifacts(api_url,selected_tracker["id"]) == []:
-                    print("Le json du tracker est vide sélectionner un autre")
-                else :
+                if not get_tuleap_artifacts(
+                        api_url, selected_tracker["id"]):
+                    print("Le json du tracker est vide,"
+                          "veuillez en sélectionner un autre")
+                else:
                     return selected_tracker
 
         print("La saisie est incorrecte")
 
 
 if __name__ == '__main__':
-    projects = get_user_projects(api_url)
+    projects = get_user_projects(API_URL)
     project_uri = choose_project(projects)
-    tracker = choose_tracker(api_url,project_uri)
+    TRACKER = choose_tracker(API_URL, project_uri)
 
     stats = pd.DataFrame()
 
@@ -226,13 +242,15 @@ if __name__ == '__main__':
     writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
 
     df1 = get_columns_stats(
-        get_tuleap_artifacts(api_url,tracker["id"])
+        get_tuleap_artifacts(API_URL, TRACKER["id"])
     )
-    df1[oldest] = df1[oldest].map(
+    df1[OLDEST_DURATION] = df1[OLDEST_DURATION].map(
         lambda t: datetime.replace(t, tzinfo=None)
     )
-    df1.to_excel(writer, sheet_name=tracker["label"])
-    writer.sheets[tracker["label"]].set_column('A:E', 18)
+    df1.to_excel(writer, sheet_name=TRACKER["label"])
+    writer.sheets[TRACKER["label"]].set_column('A:D', 18)
+    writer.sheets[TRACKER["label"]].set_column('D:D', 20)
+    writer.sheets[TRACKER["label"]].set_column('E:E', 30)
 
     print("Les résultats sont disponibles")
 
