@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 # coding: utf8
+
 import json
 import re
 
+import requests
+import urllib3
+import configparser
 import pandas as pd
 from datetime import datetime, timezone
-
-import requests
 
 tracker = 'tracker'
 column = 'column'
@@ -14,10 +16,24 @@ items_number = 'items_number'
 total_duration = 'total_duration'
 oldest = 'oldest'
 
+# import configuration from '.ini' file
+config = configparser.ConfigParser()
+config.read('.ini')
+api_url = config['TULEAP_API']['api_url']
+ACCESS_KEY = config['TULEAP_API']['access_key']
+API_PARAMS = {
+    'X-Auth-AccessKey': ACCESS_KEY
+}
+
+# suppress the warning linked to the deactivation of ssl verification
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
 
 def get_user_projects(api: str):
     url = f"{api}/projects"
-    raw_projects = requests.get(url).json()
+    raw_projects = requests.get(
+        url, params=API_PARAMS, verify=False).json()
+
     return [
         {
             'label': project['label'],
@@ -44,7 +60,10 @@ def get_tuleap_artifacts(api: str, tracker_id: str) -> list:
         params = {
             'offset': offset + size
         }
-        request = requests.get(url=url, params=params)
+        request = requests.get(url=url, params={
+            **params,
+            **API_PARAMS
+        }, verify=False)
 
         offset = int(request.headers['X-PAGINATION-OFFSET'])
         size = int(request.headers['X-PAGINATION-LIMIT'])
@@ -100,7 +119,8 @@ def get_project_trackers(api: str, project_id: int) -> list:
 
     return [
         f"{result['id']} {result['label']}"
-        for result in requests.get(url).json()
+        for result in requests.get(
+            url, params=API_PARAMS, verify=False).json()
     ]
 
 
@@ -168,8 +188,6 @@ def choose_project(projects: []):
 
 
 if __name__ == '__main__':
-    api_url = "https://tuleap.net/api"
-
     projects = get_user_projects(api_url)
     project_uri = choose_project(projects)
     trackers = get_project_trackers(api_url, 101)
