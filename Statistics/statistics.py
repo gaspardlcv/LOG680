@@ -218,6 +218,41 @@ def ask_user(items: [], item_name):
 
         print("La saisie est incorrecte")
 
+def choose_file_format():
+    avaliable_formats = [{
+            'label': "CSV",
+            'ext': "csv"
+        },  {
+            'label': "JSON",
+            'ext': "json"
+        },  {
+            'label': "Excel",
+            'ext': "xlsx"
+        }]
+    print("Choisissez le format de fichier : ")
+    i = 0
+    for format in avaliable_formats:
+        i+=1
+        print(str(i) + ": " + format["label"])
+
+    while True:
+        number_choosen = input(
+            f"Entrez un nombre entre 1 et {len(avaliable_formats)} : ")
+        if re.match('^\d*$', number_choosen):
+            if 1 <= int(number_choosen) <= len(avaliable_formats):
+                selected_format = avaliable_formats[int(number_choosen) - 1]
+                print("Vous avez sélectionnez le format" + selected_format["label"])
+                return selected_format
+
+        print("La saisie est incorrecte")
+
+
+
+
+
+
+
+
 
 if __name__ == '__main__':
     projects = get_user_projects(API_URL)
@@ -233,7 +268,8 @@ if __name__ == '__main__':
     stats = pd.DataFrame()
 
     file_input = input("Choisissez un nom de fichier : ").split('.')[0]
-    file_name = file_input + '.xlsx'
+    selected_format = choose_file_format()
+    file_name = file_input + "." + selected_format["ext"]
     print("Les stats seront enregistrées ici : " + file_name)
     print("Analyse en cours...")
 
