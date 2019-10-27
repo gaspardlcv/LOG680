@@ -16,6 +16,18 @@ ITEMS_NUMBER = 'items_number'
 MEAN_DURATION = 'mean_duration'
 OLDEST_DURATION = 'oldest_duration'
 OLDEST_NAME = 'oldest_name'
+AVAILABLE_FORMATS = [
+    {
+        'label': "CSV",
+        'ext': "csv"
+    }, {
+        'label': "JSON",
+        'ext': "json"
+    }, {
+        'label': "Excel",
+        'ext': "xlsx"
+    }
+]
 
 # import configuration from '.ini' file
 config = configparser.ConfigParser()
@@ -122,7 +134,7 @@ def get_project_trackers(api: str, project_uri: str) -> list:
     Returns a list containing the id and labels of all trackers
     associated to a given project\n
     :param api: (str) tuleap api to requests\n
-    :param project_id: (int) id of the project to analyze\n
+    :param project_uri: (int) id of the project to analyze\n
     :return: (list) list of tracker info
     """
     url = f"{api}/{project_uri}/trackers"
@@ -197,7 +209,7 @@ def ask_user(items: [], item_name):
         sys.exit(0)
 
     if len(items) == 1:
-        print(f"Le seul {item_name} disponible est le tracker "
+        print(f"Le seul {item_name} disponible est le {item_name} "
               f"'{items[0]['label']}'")
         return items[0]
 
@@ -219,6 +231,29 @@ def ask_user(items: [], item_name):
         print("La saisie est incorrecte")
 
 
+def create_file(file_input, selected_format, tracker):
+    file_name = file_input + "." + selected_format["ext"]
+    print("Les stats seront enregistrées ici : " + file_name)
+    print("Analyse en cours...")
+    df1 = get_columns_stats(
+        get_tuleap_artifacts(API_URL, tracker["id"])
+    )
+    df1[OLDEST_DURATION] = df1[OLDEST_DURATION].map(
+        lambda t: datetime.replace(t, tzinfo=None)
+    )
+    if selected_format["ext"] == "xlsx":
+        writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
+        df1.to_excel(writer, sheet_name=tracker["label"])
+        writer.sheets[tracker["label"]].set_column('A:D', 18)
+        writer.sheets[tracker["label"]].set_column('D:D', 20)
+        writer.sheets[tracker["label"]].set_column('E:E', 30)
+        writer.save()
+    elif selected_format["ext"] == "csv":
+        df1.to_csv(file_name)
+    elif selected_format["ext"] == "json":
+        df1.to_json(file_name)
+
+
 if __name__ == '__main__':
     projects = get_user_projects(API_URL)
     project_uri = ask_user(projects, 'projet')['uri']
@@ -233,25 +268,6 @@ if __name__ == '__main__':
     stats = pd.DataFrame()
 
     file_input = input("Choisissez un nom de fichier : ").split('.')[0]
-    file_name = file_input + '.xlsx'
-    print("Les stats seront enregistrées ici : " + file_name)
-    print("Analyse en cours...")
-
-    writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
-
-    df1 = get_columns_stats(
-        get_tuleap_artifacts(API_URL, selected_tracker["id"])
-    )
-    df1[OLDEST_DURATION] = df1[OLDEST_DURATION].map(
-        lambda t: datetime.replace(t, tzinfo=None)
-    )
-    df1.to_excel(writer, sheet_name=selected_tracker["label"])
-    writer.sheets[selected_tracker["label"]].set_column('A:D', 18)
-    writer.sheets[selected_tracker["label"]].set_column('D:D', 20)
-    writer.sheets[selected_tracker["label"]].set_column('E:E', 30)
-
+    selected_format = ask_user(AVAILABLE_FORMATS, "format")
+    create_file(file_input, selected_format, selected_tracker)
     print("Les résultats sont disponibles")
-
-    writer.save()
-
-    pd.Panel()
