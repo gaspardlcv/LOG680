@@ -42,7 +42,13 @@ API_PARAMS = {
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 
-def get_user_projects(api: str):
+def get_user_projects(api: str) -> list:
+    """
+    Returns the list of visible projects for the user
+    by requesting tuleap API\n
+    :param api: (str) tuleap api to requests\n
+    :return: (list) list of the projects
+    """
     url = f"{api}/projects"
     raw_projects = requests.get(
         url, params=API_PARAMS, verify=False).json()
@@ -56,6 +62,14 @@ def get_user_projects(api: str):
 
 
 def check_artifact_existence(api: str, tracker_id) -> bool:
+    """
+    Checks if a given tracker has some artifacts
+    by requesting artifacts from the tuleap API and checking
+    if the result of the request is empty or not\n
+    :param api: (str) tuleap api to requests\n
+    :param tracker_id: (str) id of the tracker to request\n
+    :return: (bool): existence of artifacts for the tracker
+    """
     url = f"{api}/trackers/{tracker_id}/artifacts"
     return requests.get(url=url, params={
         **API_PARAMS,
@@ -67,8 +81,8 @@ def check_artifact_existence(api: str, tracker_id) -> bool:
 
 def get_tuleap_artifacts(api: str, tracker_id: str) -> list:
     """
-    Requests a route of the API of tuleap and return the results as a
-    python object. If the requests is splitted into several pages, makes
+    Requests artifacts from the tuleap API for given tracker.
+    If the requests is splitted into several pages, makes
     several requests to get the whole dataset\n
     :param api: (str) tuleap api to requests\n
     :param tracker_id: (str) id of the tracker to request\n
@@ -148,7 +162,12 @@ def get_project_trackers(api: str, project_uri: str) -> list:
     ]
 
 
-def get_columns_stats(artifacts):
+def get_columns_stats(artifacts: list) -> pd.DataFrame:
+    """
+    Extracts statistics from a list of artifacts\n
+    :param artifacts: (list) data to be analyzed\n
+    :return: stats (pd.DataFrame): resulting statistics
+    """
     current_date = datetime.now(timezone.utc)
 
     no_column_artifact_number = 0
@@ -200,10 +219,71 @@ def get_columns_stats(artifacts):
     stats[MEAN_DURATION] = stats[MEAN_DURATION].map(
         get_human_duration)
 
+    stats[OLDEST_DURATION] = stats[OLDEST_DURATION].map(
+        lambda t: datetime.replace(t, tzinfo=None)
+    )
+
     return stats
 
 
-def ask_user(items: [], item_name):
+def get_artifact_changesets(artifact: dict):
+    permanent_youngest_date = None
+    youngest_date = None
+
+    url = f"{API_URL}/artifacts/{artifact['id']}/changesets"
+
+    changesets = requests.get(url, params=API_PARAMS,
+                              verify=False).json()
+
+    status = []
+    dates = []
+    for changeset in changesets:
+        submitted_on = datetime.strptime(
+            changeset['submitted_on'][:-6],
+            '%Y-%m-%dT%H:%M:%S'
+        )
+        values = changeset['values']
+
+        # convert if needed values in a list
+        if type(values) == dict:
+            values = [v for v in values.values()]
+
+        for value in values:
+            if value['label'] == 'Status':
+                for v in value['values']:
+                    if v['label'] not in status:
+                        status.append(v['label'])
+                        dates.append(submitted_on)
+                    if not youngest_date \
+                            or youngest_date < submitted_on:
+                        youngest_date = submitted_on
+
+                    if v['label'] == 'Permanent':
+                        # print(artifact['title'])
+                        if not permanent_youngest_date or \
+                                permanent_youngest_date < submitted_on:
+                            permanent_youngest_date = submitted_on
+
+    if 'Permanent' in status:
+        print(artifact['title'], end=': ')
+        for i in range(len(status)):
+            print(status[i], ' -> ', dates[i], end=' ')
+
+    if permanent_youngest_date and youngest_date \
+            and permanent_youngest_date < youngest_date:
+        print(f"{artifact['title']} ({artifact['id']})")
+
+
+def ask_user(items: list, item_name) -> dict:
+    """
+    Generic function that asks user to select an item
+    from a list of items by choosing a number.
+    If no items are available, stops the execution.\n
+    :param items: (list) list of available items.
+        Each item must be a dict containing the key 'label'\n
+    :param item_name: () name to be displayed for the user\n
+    :return: (dict): item selected by the user
+    """
     if len(items) == 0:
         print(f"Aucun {item_name} n'est disponible")
         sys.exit(0)
@@ -221,7 +301,7 @@ def ask_user(items: [], item_name):
     while True:
         number_choosen = input(
             f"Entrez un nombre entre 1 et {len(items)} : ")
-        if re.match('^\d*$', number_choosen):
+        if re.match('^\d+$', number_choosen):
             if 1 <= int(number_choosen) <= len(items):
                 selected_item = items[int(number_choosen) - 1]
                 print(f"Vous avez sélectionné le {item_name} "
@@ -231,27 +311,33 @@ def ask_user(items: [], item_name):
         print("La saisie est incorrecte")
 
 
-def create_file(file_input, selected_format, tracker):
-    file_name = file_input + "." + selected_format["ext"]
-    print("Les stats seront enregistrées ici : " + file_name)
+def create_file(
+        results: pd.DataFrame, output_name: str,
+        output_format: str, tracker_name: str
+) -> None:
+    """
+    Creates a file containing the results of the analysis\n
+    :param results: (pd.DataFrame) raw results\n
+    :param output_name: (str) name of the ouput file with no extension\n
+    :param output_format: (str) format of the ouput file\n
+    :param tracker_name: (str) name of the analyzed tracker\n
+    :return: (None)
+    """
+    filename = f"{output_name}.{output_format}"
+    print("Les stats seront enregistrées ici : " + filename)
     print("Analyse en cours...")
-    df1 = get_columns_stats(
-        get_tuleap_artifacts(API_URL, tracker["id"])
-    )
-    df1[OLDEST_DURATION] = df1[OLDEST_DURATION].map(
-        lambda t: datetime.replace(t, tzinfo=None)
-    )
-    if selected_format["ext"] == "xlsx":
-        writer = pd.ExcelWriter(file_name, engine='xlsxwriter')
-        df1.to_excel(writer, sheet_name=tracker["label"])
-        writer.sheets[tracker["label"]].set_column('A:D', 18)
-        writer.sheets[tracker["label"]].set_column('D:D', 20)
-        writer.sheets[tracker["label"]].set_column('E:E', 30)
+
+    if output_format == "xlsx":
+        writer = pd.ExcelWriter(filename, engine='xlsxwriter')
+        results.to_excel(writer, sheet_name=tracker_name)
+        writer.sheets[tracker_name].set_column('A:D', 18)
+        writer.sheets[tracker_name].set_column('D:D', 20)
+        writer.sheets[tracker_name].set_column('E:E', 30)
         writer.save()
-    elif selected_format["ext"] == "csv":
-        df1.to_csv(file_name)
-    elif selected_format["ext"] == "json":
-        df1.to_json(file_name)
+    elif output_format == "csv":
+        results.to_csv(filename)
+    elif output_format == "json":
+        results.to_json(filename)
 
 
 if __name__ == '__main__':
@@ -265,9 +351,14 @@ if __name__ == '__main__':
         print("Aucune tâche n'a été trouvée")
         sys.exit()
 
-    stats = pd.DataFrame()
+    filename = input("Choisissez un nom de fichier : ").split('.')[0]
+    selected_format = ask_user(AVAILABLE_FORMATS, "format")['ext']
 
-    file_input = input("Choisissez un nom de fichier : ").split('.')[0]
-    selected_format = ask_user(AVAILABLE_FORMATS, "format")
-    create_file(file_input, selected_format, selected_tracker)
+    stats = get_columns_stats(
+        get_tuleap_artifacts(API_URL, selected_tracker["id"])
+    )
+
+    create_file(
+        stats, filename, selected_format, selected_tracker['label']
+    )
     print("Les résultats sont disponibles")
